@@ -1,0 +1,113 @@
+---
+title: "nmer_FinalHomeworkCode_05"
+author: "Nicole Merullo"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    theme: journal
+    highlight: NULL
+---
+# Homework 5: Boots for Days
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(curl)
+library(tidyverse)
+library(mosaic)
+```
+## Challenges
+1. I forgot to remove NAs from my data at first. This was causing some issues while trying to bootstrap (even though I was doing it wrong at first)
+
+**L: **Not sure what is the issue it's causing but I saw the na.omit() function you used. Great job! 
+
+2. For bootstrapping, I originally tried something like replicate(1000, lm(sample(f.bm, 30, replace = T))) and then again for range but but it wasn't really making sense... I looked up how to bootstrap in r and found this website: https://bookdown.org/jgscott/DSGI/the-bootstrap.html and tried their method, which worked. I like using the tidyverse and mosaic functions, which feel intuitive and avoid having to use a for loop. It feels similar to what I originally tried doing with replicate but replaced with do(1000). Mosaic's version of sample does not require you to specifiy how many should be pulled in the sample, which worked with the prompt.
+
+**L: **I read the content in the link you pasted! I didn't find this article and just used the package with built in functions (and I probably shouldn't have done that). The tidyverse and mosaic packages seem really interesting, and I haven't used the mosaic package before. 
+
+3. My confidence intervals were coming as NA NA when running them like this: mean(boot_r.bm$Intercept) + qnorm(0.975, mean = 0, sd = 1) * se(mean(boot_r.bm$Intercept)). So I used the base stats function that runs the confidence intervals, confint. I could have done this for individual variables (intercept and B1), but I liked seeing the whole table return, so I left it.
+
+## Intstructions:
+When we initially discussed the central limit theorem and confidence intervals, we showed how we could use bootstrapping to estimate standard errors and confidence intervals around certain parameter values, like the mean. Using bootstrapping, we could also do the same for estimating standard errors and CIs around regression parameters, such as β coefficients.
+
+[1] Using the “KamilarAndCooperData.csv” dataset, run a linear regression looking at log(HomeRange_km2) in relation to log(Body_mass_female_mean) and report your β coeffiecients (slope and intercept).
+
+[2] Then, use bootstrapping to sample from your data 1000 times with replacement, each time fitting the same model and calculating the same coefficients. This generates a sampling distribution for each β coefficient.
+
+Estimate the standard error for each of your β coefficients as the standard deviation of the sampling distribution from your bootstrap and determine the 95% CI for each of your β coefficients based on the appropriate quantiles from your sampling distribution.
+
+How does the former compare to the SE estimated from your entire dataset using the formula for standard error implemented in lm()?
+
+How does the latter compare to the 95% CI estimated from your entire dataset?
+
+### Part 1: Linear Regression
+```{r data-loadin}
+file <- curl('https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN588_Fall23/KamilarAndCooperData.csv')
+d <- read.csv(file, header= TRUE, sep = ",", stringsAsFactors = FALSE)
+head(d)
+d <- na.omit(d)
+```
+
+
+```{r log-variables}
+range <- log(d$HomeRange_km2)
+f.bm <- log(d$Body_mass_female_mean)
+```
+
+home range is the dependent variable
+
+```{r lm}
+m <- lm(range~f.bm, data=d)
+summary(m)
+m$coefficients
+```
+B1 is 1.09 and B0 is -9.75
+
+Female body mass significantly predicts home range. For each 1 unit increase of female body mass, range increases by 1.0868. 
+
+The model explains 53% of the variation and the F-statistic is significant.
+
+**L: **Great job for this part! We used the same method here except the way excluding NA values (I used filter). I think using na.omit() is totally fine. 
+
+### Part 2: Boostrapping
+
+```{r boostrap}
+boot_r.bm = do(1000)*lm(log(d$HomeRange_km2)~log(Body_mass_female_mean), data=mosaic::resample(d))
+summary(boot_r.bm)
+```
+**Final code commentary:**
+I wanted to try boostrapping again because my standard errors and standard deviations were not matching and thus my distribution of samples was not meeting the central limit theorem. I was thinking that this had to do with resample not letting me specify a number of samples pulled from the data frame (an error throws if I add an argument). So I rewrote the bootsrap using similar ideas but on my own. What I have below I REALLY feel like should work, but doesn't. It doesn't throw an error but it basically just spits out the coefficients of the linear regression from the original sample, as if I didn't pull 100 samples from those two columns then replicated that 1000 times THEN fit a model on top of it. I have spent too long looking at this so I will let it be. At least I have something that functions.
+
+```{r take2}
+tryingagain <- lm(
+  log(d$HomeRange_km2)~log(d$Body_mass_female_mean), 
+  data = as.data.frame(replicate(1000, sample(d[, c("HomeRange_km2", "Body_mass_female_mean")], n = 100, replace = TRUE)))
+  )
+tryingagain
+```
+
+```{r standard-errors}
+boot_r.bm %>% #Look at me go... using a pipe!
+  summarize(SD.B0 = sd(log.Body_mass_female_mean.))
+boot_r.bm %>%
+  summarize(SD.B1 = sd(Intercept))
+```
+
+```{r cofidence-intervals_sampdist}
+ci.dist <- confint(boot_r.bm, level = 0.95)
+ci.dist
+```
+
+```{r cofidence-intervals_original}
+ci <- confint(m, level = 0.95)
+ci
+```
+
+**L: **The returned result here looks really clear and nice. I like how you solved the problem using confint(). 
+
+The standard deviations I calculated for B0 (0.32) and B1 (2.85) are larger than the standard errors for the sample. B1 is 1.7750 and B0 is 0.2014 in the sample. According to the central limit theorem, the standard deviations of the sampling distribution should be approximately equal to the standard errors of the original sample. Does this mean the central limit theorem does not apply here? What does that mean?
+
+**L: **Sorry I can't really provide an answer to this problem. I have found some resources saying: "Standard deviation is the square root of variance, so the standard deviation of the sampling distribution (aka standard error) is the standard deviation of the original distribution divided by the square root of n." I guess they are just not supposed to be the same..?
+
+The confidence intervals of the of bootstrapped model are much larger/wider than the original linear model.
+
+**Final commentary** I must have been looking at the wrong confidence intervals when I wrote the above, or maybe the randomness of the bootsrap produced some off CIs but the sampling distribution has a nice narrow confidence distribution, especially compared to the intercept (B0).
